@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>錦雲科技 - 太陽能與儲能節費自動試算系統</title>
+    <!-- 匯入 Excel 與 PDF 解析專用前端 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        // 設定 PDF.js 的 Worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <style>
+        :root {
+            --primary: #0056b3;
+            --primary-light: #e6f0fa;
+            --success: #28a745;
+            --success-light: #e6f6ea;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --dark: #343a40;
+            --gray: #6c757d;
+            --light-bg: #f8f9fa;
+            --border-color: #dee2e6;
+            --radius: 8px;
+            --shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; color: var(--dark); line-height: 1.6; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        /* LOGO與標題水平對齊 */
+        .header-section { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; text-align: center; }
+        .header-section img { max-height: 60px; object-fit: contain; }
+        .header-section h1 { color: var(--primary); margin: 0; font-size: 2rem; font-weight: bold; line-height: 1; }
+        
+        .section-header-flex { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); padding-bottom: 8px; margin-bottom: 20px; }
+        .section-header-flex h2 { font-size: 1.2rem; color: var(--dark); border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+        h2 { font-size: 1.2rem; color: var(--dark); border-bottom: 2px solid var(--primary); padding-bottom: 8px; margin-bottom: 20px; }
+        
+        .card { background: #fff; border-radius: var(--radius); padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
+        .card.solar { border-top: 4px solid var(--warning); }
+        .card.storage { border-top: 4px solid var(--success); }
+        .card.taipower { border-top: 4px solid var(--primary); }
+        .card.data-table { border-top: 4px solid #17a2b8; overflow-x: auto; }
+        
+        /* 總結報告 */
+        .card.summary { background: #f4f8fb; border: 1px solid #cce0f0; border-top: 4px solid #4a90e2; }
+        .card.summary h2 { color: #2c3e50; border-bottom-color: #cce0f0; }
+        .summary .form-group label { color: #34495e; font-weight: 700; }
+        .summary input[readonly] { background-color: #ffffff; border: 1px solid #b3d4ec; color: #d35400; font-size: 1.2rem; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
+        .summary .unit { color: #7f8c8d; }
+
+        .grid { display: grid; gap: 15px; }
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+        .grid-5 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 0.9rem; color: var(--gray); }
+        
+        input[type="number"], input[type="text"], select { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 1rem; transition: border-color 0.3s; }
+        input[type="number"]:focus, input[type="text"]:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+        input[readonly]:not(.summary input[readonly]):not(.table-readonly) { background-color: #e9ecef; cursor: not-allowed; font-weight: bold; color: var(--primary); }
+
+        .flex-row { display: flex; align-items: center; gap: 10px; }
+        .unit { color: var(--gray); font-size: 0.9rem; white-space: nowrap; }
+        .note { font-size: 0.85rem; color: var(--danger); margin-top: 5px; }
+
+        /* 按鈕樣式 */
+        .btn { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background 0.3s; }
+        .btn:hover { background: #004494; }
+        .btn-small { padding: 6px 12px; font-size: 0.9rem; }
+        .btn-info { background: #17a2b8; }
+        .btn-info:hover { background: #117a8b; }
+        .btn-success { background: var(--success); }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: #c82333; }
+        .btn-danger:disabled { background: var(--gray); cursor: not-allowed; opacity: 0.6; }
+
+        /* 月份統計表樣式 */
+        .stat-table { width: 100%; border-collapse: collapse; margin-top: 10px; min-width: 900px; font-size: 0.9rem; }
+        .stat-table th, .stat-table td { border: 1px solid var(--border-color); padding: 8px; text-align: center; }
+        .stat-table th { background-color: var(--light-bg); font-weight: 600; color: var(--dark); }
+        .stat-table td input { width: 100%; padding: 6px; font-size: 0.9rem; text-align: right; border: 1px solid transparent; }
+        .stat-table td input:focus { border: 1px solid var(--primary); background: #fff; }
+        .table-readonly { background-color: transparent !important; border: none !important; font-weight: bold; color: var(--dark) !important; text-align: right; outline: none; }
+        .table-footer { background-color: #e2e8f0; font-weight: bold; }
+        .ratio-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: var(--radius); margin-top: 15px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-around; }
+        .ratio-item { text-align: center; }
+        .ratio-item span { display: block; font-size: 1.2rem; font-weight: bold; color: #856404; }
+        .ratio-item label { color: #856404; font-size: 0.85rem; }
+
+        /* 浮動側邊計算機 */
+        .floating-calc-wrapper { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 1000; display: flex; align-items: center; }
+        .calc-toggle-btn { background: var(--dark); color: white; border: none; padding: 15px 10px; cursor: pointer; border-radius: 8px 0 0 8px; font-size: 1.2rem; box-shadow: -2px 0 5px rgba(0,0,0,0.2); }
+        .calc-container { background: white; border: 1px solid var(--border-color); border-right: none; box-shadow: -4px 4px 10px rgba(0,0,0,0.1); border-radius: 8px 0 0 8px; padding: 15px; width: 220px; display: none; }
+        .calc-container.active { display: block; }
+        .calc-display { width: 100%; background: #f8f9fa; border: 1px solid #ccc; border-radius: 4px; padding: 10px; font-size: 1.2rem; text-align: right; margin-bottom: 10px; font-family: monospace; }
+        .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+        .calc-btn { background: #e9ecef; border: 1px solid #ccc; border-radius: 4px; padding: 10px 0; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+        .calc-btn:hover { background: #d3d9df; }
+        .calc-btn.op { background: var(--primary-light); color: var(--primary); font-weight: bold; }
+        .calc-btn.eval { background: var(--primary); color: white; grid-column: span 2; }
+        .calc-btn.clear { background: var(--danger); color: white; }
+
+        /* 台電電價表彈出視窗 (Modal) */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 2000; justify-content: center; align-items: center; padding: 20px;
+        }
+        .modal-box {
+            background: #fff; width: 100%; max-width: 1000px; height: 90vh; border-radius: var(--radius);
+            display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); overflow: hidden;
+        }
+        .modal-header {
+            padding: 15px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--primary); color: white;
+        }
+        .modal-header h3 { margin: 0; font-size: 1.2rem; }
+        .close-btn { background: none; border: none; color: white; font-size: 1.8rem; cursor: pointer; line-height: 1; }
+        .modal-body { flex-grow: 1; display: flex; flex-direction: column; background: #f8f9fa; padding: 0; }
+        .pdf-fallback-bar { padding: 12px 20px; background: #e9ecef; border-bottom: 1px solid #ccc; text-align: center; font-size: 0.95rem; }
+        .pdf-fallback-bar a { color: var(--primary); font-weight: bold; text-decoration: underline; margin-left: 10px; }
+
+        @media (max-width: 768px) {
+            .grid-4, .grid-5 { grid-template-columns: 1fr 1fr; }
+            .floating-calc-wrapper { top: auto; bottom: 20px; transform: none; right: 0; flex-direction: column; align-items: flex-end; }
+            .calc-toggle-btn { border-radius: 50%; width: 50px; height: 50px; padding: 0; box-shadow: 0 4px 8px rgba(0,0,0,0.3); margin-bottom: 10px; margin-right: 20px; }
+            .calc-container { border-radius: 8px; border-right: 1px solid var(--border-color); margin-right: 20px; }
+            .section-header-flex { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
+        @media (max-width: 480px) {
+            .grid-5, .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <div class="header-section">
+        <img src="JinCloud LOGO.png" alt="錦雲科技 LOGO" onerror="this.style.display='none'">
+        <h1>錦雲科技 太陽能與儲能節費自動試算系統</h1>
+    </div>
+
+    <!-- 0. 本地專案檔案管理 (JSON 匯出與匯入) -->
+    <div class="card taipower" style="border-top: 4px solid #6f42c1;">
+        <h2 onclick="toggleSection('sectionCloudContent')" style="cursor: pointer; user-select: none;" title="點擊展開/收起專案備份區">📂 本地專案檔案管理 (JSON 匯出與匯入)</h2>
+        <div id="sectionCloudContent">
+            <div class="note" style="margin-bottom: 15px; color: var(--gray);">
+                *本系統支援純本地安全隱私模式，100% 確保資料不外洩。您可以建立檔案名稱，並自由搭配任何雲端空間（如 Google Drive、OneDrive、Dropbox等）或本地硬碟備份使用。
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label>專案檔案名稱 (將作為匯出檔名)</label>
+                    <input type="text" id="localProjectName" placeholder="例如：住宅光儲評估案-第一版">
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-info btn-small" onclick="exportProjectToJson()" style="flex: 1; padding: 10px; background: #6f42c1; color: white; border: none; border-radius: 4px; font-weight: 600;">📤 匯出本案 JSON 檔</button>
+                    <button class="btn btn-info btn-small" onclick="triggerJsonImportClick(event)" style="flex: 1; padding: 10px; background: #4b6584; color: white; border: none; border-radius: 4px; font-weight: 600;">📥 匯入 JSON 檔案</button>
+                    <input type="file" id="jsonImportInput" accept=".json" style="display: none;" onchange="importJsonProject(event)">
+                </div>
+            </div>
+            <hr style="margin: 15px 0; border: 0; border-top: 1px dashed #ccc;">
+            <div class="note" style="margin-top: 0; color: var(--dark); font-size: 0.85rem; line-height: 1.4;">
+                💡 <strong>專案檔案備份指引：</strong> 點擊「匯出本案 JSON 檔」將檔案下載到本機電腦後，您可以直接將檔案上傳至您的個人雲端空間（如 Google Drive、OneDrive、iCloud 等）或存於隨身碟等本地硬碟保存。下次需要重新評估時，只需將該 JSON 檔案下載或點選「匯入 JSON 檔案」讀取即可。免設定、無延遲，且 100% 確保個資隱私！
+            </div>
+        </div>
+    </div>
+
+    <div class="card taipower">
+        <div class="section-header-flex">
+            <h2>1. 台電電價方案與費率設定 (表燈住商專用)</h2>
+            <button class="btn btn-small btn-info" onclick="openTariffModal()">📄 檢視台電最新電價表公告</button>
+        </div>
+        
+        <div class="form-group">
+            <label>選擇預設電價方案：</label>
+            <select id="tariffPlanSelect" onchange="loadTariffPlan()">
+                <optgroup label="調整後各類用電電價表 (表燈住商)">
+                    <option value="adj_3_2_1_1">表燈(住商)電價 (二)時間電價 1.簡易型時間電價 (1)二段式</option>
+                    <option value="adj_3_2_1_2">表燈(住商)電價 (二)時間電價 1.簡易型時間電價 (2)三段式</option>
+                    <option value="adj_3_2_2_1">表燈(住商)電價 (二)時間電價 2.標準型時間電價 (1)二段式</option>
+                    <option value="adj_3_2_2_2">表燈(住商)電價 (二)時間電價 2.標準型時間電價 (2)三段式</option>
+                </optgroup>
+                <optgroup label="自訂">
+                    <option value="custom">自訂費率 (依照最新台電公告手動輸入)</option>
+                </optgroup>
+            </select>
+        </div>
+        
+        <div class="grid grid-2">
+            <div>
+                <h3 style="margin-bottom: 10px; font-size: 1rem; color: var(--primary);">夏月費率 (5/16 - 10/15)</h3>
+                <div class="grid grid-2">
+                    <div class="form-group"><label>尖峰電價</label><div class="flex-row"><input type="number" id="sumPeakRate" step="0.01" value="11.30"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>半尖峰電價</label><div class="flex-row"><input type="number" id="sumSemiPeakRate" step="0.01" value="3.63"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>週六半尖峰</label><div class="flex-row"><input type="number" id="sumSatSemiRate" step="0.01" value="1.78"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>離峰電價</label><div class="flex-row"><input type="number" id="sumOffPeakRate" step="0.01" value="1.58"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>基本電費(最低/基本費)</label><div class="flex-row"><input type="number" id="sumBasicRate" step="0.1" value="75.0"><span class="unit">元</span></div></div>
+                </div>
+            </div>
+            <div>
+                <h3 style="margin-bottom: 10px; font-size: 1rem; color: var(--primary);">非夏月費率 (其他月份)</h3>
+                <div class="grid grid-2">
+                    <div class="form-group"><label>尖峰電價</label><div class="flex-row"><input type="number" id="nonSumPeakRate" step="0.01" value="0.00"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>半尖峰電價</label><div class="flex-row"><input type="number" id="nonSumSemiPeakRate" step="0.01" value="3.40"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>週六半尖峰</label><div class="flex-row"><input type="number" id="nonSumSatSemiRate" step="0.01" value="1.65"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>離峰電價</label><div class="flex-row"><input type="number" id="nonSumOffPeakRate" step="0.01" value="1.45"><span class="unit">元/度</span></div></div>
+                    <div class="form-group"><label>基本電費(最低/基本費)</label><div class="flex-row"><input type="number" id="nonSumBasicRate" step="0.1" value="75.0"><span class="unit">元</span></div></div>
+                </div>
+            </div>
+        </div>
+        
+        <hr style="margin: 15px 0; border: 0; border-top: 1px dashed #ccc;">
+        <h3 style="margin-bottom: 10px; font-size: 1rem; color: var(--primary);">費率時間參數 (用於計算佔比與套利天數)</h3>
+        <div class="grid grid-5">
+            <div class="form-group"><label>夏月天數設定</label><div class="flex-row"><input type="number" id="summerDays" value="109"><span class="unit">天</span></div></div>
+            <div class="form-group"><label>非夏月天數設定</label><div class="flex-row"><input type="number" id="nonSummerDays" value="151"><span class="unit">天</span></div></div>
+            <div class="form-group"><label>夏月計費月數</label><div class="flex-row"><input type="number" id="summerMonths" value="5"><span class="unit">個月</span></div></div>
+            <div class="form-group"><label>非夏月計費月數</label><div class="flex-row"><input type="number" id="nonSummerMonths" value="7"><span class="unit">個月</span></div></div>
+            <div class="form-group"><label>夏月平均電價參考</label><div class="flex-row"><input type="text" id="avgSummerRate" readonly><span class="unit">元/度</span></div></div>
+        </div>
+    </div>
+
+    <div class="card data-table">
+        <div class="section-header-flex">
+            <h2 onclick="toggleSection('section2Content')" style="cursor: pointer; user-select: none;" title="點擊展開/收起區塊">2. 歷史用電數據統計報表 (1月~12月)</h2>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="btn btn-small btn-success" onclick="triggerImportClick(event)">📥 匯入 Excel / PDF</button>
+                <input type="file" id="importFileInput" accept=".xlsx, .xls, .csv, .pdf" style="display: none;" onchange="handleImportFile(event)">
+            </div>
+        </div>
+        <div id="section2Content">
+            <div class="note" style="margin-bottom: 10px;">*請輸入每月用電帳單數據，系統將自動精算加總、日均及夏月/非夏月佔比。</div>
+            <table class="stat-table">
+                <thead>
+                    <tr>
+                        <th width="60">月份</th>
+                        <th>尖峰度數</th>
+                        <th>半尖峰度數</th>
+                        <th>週六半尖峰</th>
+                        <th>離峰度數</th>
+                        <th>契約容量</th>
+                        <th>總用電量</th>
+                        <th>繳費金額</th>
+                    </tr>
+                </thead>
+                <tbody id="usageTableBody">
+                    </tbody>
+                <tfoot>
+                    <tr class="table-footer">
+                        <td>總計</td>
+                        <td><input type="text" id="sum_peak" class="table-readonly" readonly></td>
+                        <td><input type="text" id="sum_semi" class="table-readonly" readonly></td>
+                        <td><input type="text" id="sum_sat" class="table-readonly" readonly></td>
+                        <td><input type="text" id="sum_off" class="table-readonly" readonly></td>
+                        <td>-</td>
+                        <td><input type="text" id="sum_total" class="table-readonly" readonly></td>
+                        <td><input type="text" id="sum_bill" class="table-readonly" readonly></td>
+                    </tr>
+                    <tr class="table-footer">
+                        <td>日均</td>
+                        <td><input type="text" id="avg_peak" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_semi" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_sat" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_off" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_cap" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_total" class="table-readonly" readonly></td>
+                        <td><input type="text" id="avg_bill" class="table-readonly" readonly></td>
+                    </tr>
+                </tfoot>
+            </table>
+            
+            <div class="ratio-box">
+                <div class="ratio-item"><label>夏月尖峰佔比</label><span id="ratio_sum_peak">0%</span></div>
+                <div class="ratio-item"><label>夏月半尖峰佔比</label><span id="ratio_sum_semi">0%</span></div>
+                <div class="ratio-item"><label>非夏月尖峰佔比</label><span id="ratio_non_peak">0%</span></div>
+                <div class="ratio-item"><label>非夏月半尖峰佔比</label><span id="ratio_non_semi">0%</span></div>
+                <button class="btn btn-small" onclick="syncTableToSettings()" style="background:var(--dark); color:white; padding:8px 15px; border:none; border-radius:4px; cursor:pointer;">↓ 將日均與佔比帶入下方試算</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 onclick="toggleSection('section3Content')" style="cursor: pointer; user-select: none;" title="點擊展開/收起區塊">3. 用電基礎數據與負載設定</h2>
+        <div id="section3Content">
+            <div class="grid grid-5">
+                <div class="form-group"><label>目前契約容量</label><div class="flex-row"><input type="number" id="contractCapacity" value="15"><span class="unit">kW</span></div></div>
+                <div class="form-group"><label>日平均用電量</label><div class="flex-row"><input type="number" id="dailyUsage" value="80"><span class="unit">度</span></div></div>
+                <div class="form-group"><label>尖峰時段(16-22)佔比</label><div class="flex-row"><input type="number" id="peakUsageRatio" value="45"><span class="unit">%</span></div></div>
+                <div class="form-group"><label>年平均電價估算</label><div class="flex-row"><input type="number" id="annualAvgRate" value="4.50" step="0.01"><span class="unit">元/度</span></div></div>
+            </div>
+            <hr style="margin: 10px 0 20px 0; border: 0; border-top: 1px dashed #ccc;">
+            <div class="grid grid-3">
+                <div class="form-group"><label>尖峰時段總用電量</label><div class="flex-row"><input type="number" id="peakTotalUsage" value="36"><span class="unit">度</span></div></div>
+                <div class="form-group"><label>尖峰時段平均負載</label><div class="flex-row"><input type="number" id="peakAvgLoad" value="6"><span class="unit">kW</span></div></div>
+                <div class="form-group"><label>尖峰時段需量</label><div class="flex-row"><input type="number" id="peakDemand" value="12"><span class="unit">kW</span></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card solar">
+        <h2>4. 太陽能發電系統建置評估 (請手動輸入參數)</h2>
+        <div class="grid grid-4">
+            <div class="form-group"><label>太陽能建置容量 (光電瓦數)</label><div class="flex-row"><input type="number" id="pvCapacity" value="" placeholder="例如: 5"><span class="unit">kWp</span></div></div>
+            <div class="form-group"><label>有效日照時數 (日平均)</label><div class="flex-row"><input type="number" id="pvSunHours" value="" placeholder="例如: 3.5" step="0.1"><span class="unit">小時</span></div></div>
+            <div class="form-group"><label>系統效率值 (PR)</label><div class="flex-row"><input type="number" id="pvEfficiency" value="" placeholder="例如: 80" step="1"><span class="unit">%</span></div></div>
+            <div class="form-group"><label>日均發電量 (瓦數*時數*效率)</label><div class="flex-row"><input type="text" id="pvDailyGen" readonly style="color: #d35400;"><span class="unit">度/日</span></div></div>
+
+            <div class="form-group"><label>建置單價 (每 kW)</label><div class="flex-row"><input type="number" id="pvUnitCost" value="" placeholder="例如: 60000"><span class="unit">元</span></div></div>
+            <div class="form-group"><label>年日照天數估算</label><div class="flex-row"><input type="number" id="pvSunDays" value="" placeholder="例如: 365"><span class="unit">天</span></div></div>
+            <div class="form-group"><label>自發自用比例 (%)</label><div class="flex-row"><input type="number" id="pvSelfUsageRatio" value="" placeholder="例如: 100" step="1"><span class="unit">%</span></div><div class="note">*調節實際抵扣電費之比例</div></div>
+            <div class="form-group"><label>T-REC 綠能憑證單價</label><div class="flex-row"><input type="number" id="trecRate" value="" placeholder="例如: 3.0" step="0.1"><span class="unit">元/度</span></div></div>
+        </div>
+        <hr style="margin: 15px 0; border: 0; border-top: 1px dashed #ccc;">
+        <div class="grid grid-3">
+            <div class="form-group"><label>太陽能總投資金額</label><div class="flex-row"><input type="text" id="pvTotalCost" readonly><span class="unit">元</span></div></div>
+            <div class="form-group"><label>預估年發電量</label><div class="flex-row"><input type="text" id="pvAnnualGen" readonly><span class="unit">度</span></div></div>
+            <div class="form-group"><label>自發自用年節省電費</label><div class="flex-row"><input type="text" id="pvAnnualSavings" readonly><span class="unit">元</span></div></div>
+        </div>
+    </div>
+
+    <div class="card storage">
+        <h2>5. 儲能系統建置與套利評估</h2>
+        
+        <!-- 儲能規格智慧下拉選單 -->
+        <div style="background: var(--success-light); border: 2px solid var(--success); border-radius: var(--radius); padding: 15px; margin-bottom: 20px;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label style="color: #1e7e34; font-weight: bold; font-size: 0.95rem;">⚡ 快速選擇儲能設備規格：</label>
+                <select id="essPresetSelect" onchange="applyEssPreset()" style="border-color: var(--success); font-weight: bold; color: var(--dark);">
+                    <option value="pack1">方案一：8度電(容量) / 6kW(功率) 套裝 (價格：13 萬元)</option>
+                    <option value="pack2">方案二：16度電(容量) / 11kW(功率) 套裝 (價格：22 萬元)</option>
+                    <option value="none">-- 手動輸入 / 自訂規格 --</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-4">
+            <div class="form-group"><label>單台儲能容量</label><div class="flex-row"><input type="number" id="essCapacity" value="8"><span class="unit">kWh</span></div></div>
+            <div class="form-group"><label>儲能設備套數</label><div class="flex-row"><input type="number" id="essSets" value="1"><span class="unit">套</span></div></div>
+            <div class="form-group"><label>緊急用電預留 (%)</label><div class="flex-row"><input type="number" id="essReservePercent" value="10"><span class="unit">%</span></div></div>
+            <div class="form-group"><label>充放電轉換效率</label><div class="flex-row"><input type="number" id="essEfficiency" value="95" step="1"><span class="unit">%</span></div></div>
+            
+            <div class="form-group"><label>夏月運作天數 (預設不含假日)</label><div class="flex-row"><input type="number" id="arbDaysSummer" value="109"><span class="unit">天</span></div></div>
+            <div class="form-group"><label>非夏月運作天數 (預設不含假日)</label><div class="flex-row"><input type="number" id="arbDaysNonSummer" value="151"><span class="unit">天</span></div></div>
+            <div class="form-group"><label>單套設備成本 (萬元)</label><div class="flex-row"><input type="number" id="essUnitCost" value="13" step="0.1"><span class="unit">萬元</span></div></div>
+            <div class="form-group"><label>安裝與整合工程 (萬元)</label><div class="flex-row"><input type="number" id="essInstallCost" value="0" step="0.1"><span class="unit">萬元</span></div></div>
+            
+            <div class="form-group"><label>預計降低契約容量 (逆變輸出)</label><div class="flex-row"><input type="number" id="essReduceCap" value="6" step="0.1"><span class="unit">kW</span></div></div>
+        </div>
+        <hr style="margin: 15px 0; border: 0; border-top: 1px dashed #ccc;">
+        <div class="grid grid-3">
+            <div class="form-group"><label>實際日放電量(可用度數)</label><div class="flex-row"><input type="text" id="essDailyDischarge" readonly><span class="unit">度/日</span></div></div>
+            <div class="form-group"><label>夏月 尖離峰價差</label><div class="flex-row"><input type="text" id="essSumSpread" readonly><span class="unit">元/度</span></div></div>
+            <div class="form-group"><label>非夏月 尖離峰價差</label><div class="flex-row"><input type="text" id="essNonSumSpread" readonly><span class="unit">元/度</span></div></div>
+            <div class="form-group"><label>儲能總投資金額</label><div class="flex-row"><input type="text" id="essTotalCost" readonly><span class="unit">元</span></div></div>
+            <div class="form-group"><label>時間電價套利年收益</label><div class="flex-row"><input type="text" id="essArbitrageSavings" readonly><span class="unit">元/年</span></div></div>
+            <div class="form-group"><label>調降契約容量年節費</label><div class="flex-row"><input type="text" id="essDemandSavings" readonly><span class="unit">元/年</span></div></div>
+        </div>
+    </div>
+
+    <div class="card summary">
+        <h2>6. 總結報告與投資回報分析</h2>
+        <div class="grid grid-3">
+            <div class="form-group"><label>專案總投資金額</label><div class="flex-row"><input type="text" id="totalProjectCost" readonly><span class="unit">元</span></div></div>
+            <div class="form-group"><label>年總收益 (節費+憑證+套利)</label><div class="flex-row"><input type="text" id="totalAnnualBenefits" readonly><span class="unit">元/年</span></div></div>
+            <div class="form-group"><label>靜態投資回收期</label><div class="flex-row"><input type="text" id="roiYears" readonly><span class="unit">年</span></div></div>
+        </div>
+        <hr style="margin: 15px 0; border: 0; border-top: 1px dashed #badbcc;">
+        <h3 style="font-size: 1rem; margin-bottom: 15px; color: #34495e;">💰 收益結構拆解</h3>
+        <div class="grid grid-4">
+            <div class="form-group"><label>太陽能自用節費</label><div class="flex-row"><input type="text" id="benefitPv" readonly></div></div>
+            <div class="form-group"><label>綠能憑證(T-REC)收益</label><div class="flex-row"><input type="text" id="benefitTrec" readonly></div></div>
+            <div class="form-group"><label>儲能電價套利收益</label><div class="flex-row"><input type="text" id="benefitArbitrage" readonly></div></div>
+            <div class="form-group"><label>降低契約容量節費</label><div class="flex-row"><input type="text" id="benefitDemand" readonly></div></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- 台電電價表彈出視窗 (Modal) -->
+<div class="modal-overlay" id="tariffModal" onclick="closeModalOnOutsideClick(event)">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>📄 台灣電力公司 114年10月電價公告</h3>
+            <button class="close-btn" onclick="closeTariffModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="pdf-fallback-bar">
+                若下方無法正常顯示 PDF，您可以 <a href="1140930_114年10月電價公告.pdf" target="_blank">點此另開視窗檢視或下載</a>
+            </div>
+            <iframe src="1140930_114年10月電價公告.pdf" style="width: 100%; height: 100%; border: none;"></iframe>
+        </div>
+    </div>
+</div>
+
+<!-- 智慧數據匯入核對與預覽 (Modal) -->
+<div class="modal-overlay" id="importModal" onclick="closeImportModalOnOutsideClick(event)">
+    <div class="modal-box" style="max-width: 800px; height: auto; max-height: 85vh;">
+        <div class="modal-header" style="background: var(--success);">
+            <h3>📥 數據匯入確認與核對</h3>
+            <button class="close-btn" onclick="closeImportModal()">×</button>
+        </div>
+        <div class="modal-body" style="padding: 20px; overflow-y: auto;">
+            <div id="importLoading" style="display: none; text-align: center; padding: 20px;">
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--success); margin-bottom: 10px;">⏳ 正在自動分析與對齊數據，請稍候...</div>
+                <div style="font-size: 0.9rem; color: var(--gray);">正在嘗試解析 Excel 工作表欄位或 PDF 文字結構</div>
+            </div>
+            <div id="importContent" style="display: none;">
+                <p style="margin-bottom: 15px; font-weight: 600; color: var(--dark); font-size: 0.95rem;">
+                    我們已成功解析檔案！請確認下方偵測對齊後的用電數據（您可直接在此修改調整，勾選要匯入的月份），最後點擊「確認寫入」：
+                </p>
+                <div id="importDetectedContainer" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 20px; max-height: 400px; overflow-y: auto;">
+                    <!-- 預覽核對表格將由 JS 動態渲染至此 -->
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="btn btn-small" style="background: var(--gray); color: white;" onclick="closeImportModal()">取消</button>
+                    <button class="btn btn-small btn-success" id="btnConfirmImport" onclick="executeImportWrite()">確認寫入試算表</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 自訂確認對話視窗 (Confirm Modal - 代替瀏覽器 confirm 彈窗) -->
+<div class="modal-overlay" id="confirmModal">
+    <div class="modal-box" style="max-width: 400px; height: auto; margin: auto; border-radius: 8px;">
+        <div class="modal-header" id="confirmHeader" style="background: var(--danger);">
+            <h3 id="confirmTitle" style="color: white; margin: 0; font-size: 1.1rem;">確認操作</h3>
+        </div>
+        <div class="modal-body" style="padding: 20px; background: white;">
+            <p id="confirmMessage" style="margin-bottom: 20px; font-weight: 500; color: var(--dark);"></p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-small" style="background: var(--gray); color: white;" onclick="closeConfirmModal(false)">取消</button>
+                <button class="btn btn-small btn-danger" id="btnConfirmAction" onclick="closeConfirmModal(true)">確定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="floating-calc-wrapper">
+    <button class="calc-toggle-btn" onclick="toggleCalc()" title="展開/收起計算機">🖩</button>
+    <div class="calc-container" id="calcContainer">
+        <input type="text" id="calcDisplayStr" class="calc-display" readonly value="0">
+        <div class="calc-grid">
+            <button class="calc-btn clear" onclick="calcAction('C')">C</button>
+            <button class="calc-btn op" onclick="calcAction('(')">(</button>
+            <button class="calc-btn op" onclick="calcAction(')')">)</button>
+            <button class="calc-btn op" onclick="calcAction('/')">÷</button>
+            
+            <button class="calc-btn" onclick="calcAction('7')">7</button>
+            <button class="calc-btn" onclick="calcAction('8')">8</button>
+            <button class="calc-btn" onclick="calcAction('9')">9</button>
+            <button class="calc-btn op" onclick="calcAction('*')">×</button>
+            
+            <button class="calc-btn" onclick="calcAction('4')">4</button>
+            <button class="calc-btn" onclick="calcAction('5') text">5</button>
+            <button class="calc-btn" onclick="calcAction('6')">6</button>
+            <button class="calc-btn op" onclick="calcAction('-')">-</button>
+            
+            <button class="calc-btn" onclick="calcAction('1')">1</button>
+            <button class="calc-btn" onclick="calcAction('2')">2</button>
+            <button class="calc-btn" onclick="calcAction('3')">3</button>
+            <button class="calc-btn op" onclick="calcAction('+')">+</button>
+            
+            <button class="calc-btn" onclick="calcAction('0')">0</button>
+            <button class="calc-btn" onclick="calcAction('.')">.</button>
+            <button class="calc-btn eval" onclick="calcAction('=')">=</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 區塊展開/收起控制 ---
+    function toggleSection(id) {
+        const el = document.getElementById(id);
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+        } else {
+            el.style.display = 'none';
+        }
+    }
+
+    // --- 數據匯入彈出視窗(Import Modal) 控制 ---
+    function openImportModal() {
+        document.getElementById('importModal').style.display = 'flex';
+        document.getElementById('importLoading').style.display = 'block';
+        document.getElementById('importContent').style.display = 'none';
+    }
+    function closeImportModal() {
+        document.getElementById('importModal').style.display = 'none';
+        document.getElementById('importFileInput').value = ''; 
+    }
+    function closeImportModalOnOutsideClick(event) {
+        if (event.target.id === 'importModal') {
+            closeImportModal();
+        }
+    }
+
+    // 觸發隱藏的檔案選擇器 (阻止冒泡，避免點擊觸發區塊收合)
+    function triggerImportClick(event) {
+        event.stopPropagation();
+        document.getElementById('importFileInput').click();
+    }
+
+    // --- 智慧懸浮 Toast 通知實作 (完全取代老舊瀏覽器 alert) ---
+    function showToast(message, type = 'info') {
+        let container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.style.cssText = 'position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px; pointer-events:none;';
+            document.body.appendChild(container);
+        }
+        
+        const toast = document.createElement('div');
+        toast.style.cssText = 'padding:14px 22px; border-radius:8px; background:white; box-shadow:0 10px 25px rgba(0,0,0,0.15); font-weight:600; font-size:0.95rem; pointer-events:auto; transition:all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform:translateX(150px); opacity:0; display:flex; align-items:center; gap:10px; border-left:5px solid var(--primary);';
+        
+        if (type === 'success') toast.style.borderLeftColor = 'var(--success)';
+        else if (type === 'danger' || type === 'error') toast.style.borderLeftColor = 'var(--danger)';
+        else if (type === 'warning') toast.style.borderLeftColor = 'var(--warning)';
+
+        toast.innerHTML = message;
+        container.appendChild(toast);
+
+        // 進場動畫
+        setTimeout(() => {
+            toast.style.transform = 'translateX(0)';
+            toast.style.opacity = '1';
+        }, 50);
+
+        // 4秒後退場自動銷毀
+        setTimeout(() => {
+            toast.style.transform = 'translateX(150px)';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+    // 將 Toast 掛載至全域
+    window.showToast = showToast;
+
+    // --- 自訂式確認對話窗實作 (完全取代瀏覽器 confirm) ---
+    let confirmCallback = null;
+    function showConfirm(title, message, callback) {
+        document.getElementById('confirmTitle').innerText = title;
+        document.getElementById('confirmMessage').innerText = message;
+        document.getElementById('confirmModal').style.display = 'flex';
+        confirmCallback = callback;
+    }
+    function closeConfirmModal(accepted) {
+        document.getElementById('confirmModal').style.display = 'none';
+        if (accepted && confirmCallback) {
+            confirmCallback();
+        }
+        confirmCallback = null;
+    }
+    window.showConfirm = showConfirm;
+
+    // --- 本機 JSON 備份導出邏輯 ---
+    function exportProjectToJson() {
+        const projectName = document.getElementById('localProjectName').value.trim() || '未命名住宅光儲評估案';
+        
+        // 封裝全部設定
+        const payload = {
+            projectName: projectName,
+            updatedAt: new Date().toISOString(),
+            config: {
+                tariffPlan: document.getElementById('tariffPlanSelect').value,
+                rates: {
+                    sumPeakRate: getVal('sumPeakRate'),
+                    sumSemiPeakRate: getVal('sumSemiPeakRate'),
+                    sumSatSemiRate: getVal('sumSatSemiRate'),
+                    sumOffPeakRate: getVal('sumOffPeakRate'),
+                    sumBasicRate: getVal('sumBasicRate'),
+                    nonSumPeakRate: getVal('nonSumPeakRate'),
+                    nonSumSemiPeakRate: getVal('nonSumSemiPeakRate'),
+                    nonSumSatSemiRate: getVal('nonSumSatSemiRate'),
+                    nonSumOffPeakRate: getVal('nonSumOffPeakRate'),
+                    nonSumBasicRate: getVal('nonSumBasicRate')
+                },
+                params: {
+                    summerDays: getVal('summerDays'),
+                    nonSummerDays: getVal('nonSummerDays'),
+                    summerMonths: getVal('summerMonths'),
+                    nonSummerMonths: getVal('nonSummerMonths')
+                },
+                load: {
+                    contractCapacity: getVal('contractCapacity'),
+                    dailyUsage: getVal('dailyUsage'),
+                    peakUsageRatio: getVal('peakUsageRatio'),
+                    annualAvgRate: getVal('annualAvgRate'),
+                    peakTotalUsage: getVal('peakTotalUsage'),
+                    peakAvgLoad: getVal('peakAvgLoad'),
+                    peakDemand: getVal('peakDemand')
+                },
+                solar: {
+                    pvCapacity: getVal('pvCapacity'),
+                    pvSunHours: getVal('pvSunHours'),
+                    pvEfficiency: getVal('pvEfficiency'),
+                    pvUnitCost: getVal('pvUnitCost'),
+                    pvSunDays: getVal('pvSunDays'),
+                    pvSelfUsageRatio: getVal('pvSelfUsageRatio'),
+                    trecRate: getVal('trecRate')
+                },
+                storage: {
+                    essCapacity: getVal('essCapacity'),
+                    essSets: getVal('essSets'),
+                    essReservePercent: getVal('essReservePercent'),
+                    essEfficiency: getVal('essEfficiency'),
+                    arbDaysSummer: getVal('arbDaysSummer'),
+                    arbDaysNonSummer: getVal('arbDaysNonSummer'),
+                    essUnitCost: getVal('essUnitCost'),
+                    essInstallCost: getVal('essInstallCost'),
+                    essReduceCap: getVal('essReduceCap')
+                }
+            },
+            monthlyUsages: []
+        };
+
+        // 封裝報表用電
+        for (let i = 1; i <= 12; i++) {
+            payload.monthlyUsages.push({
+                month: i,
+                peak: parseFloat(document.querySelector(`.t_peak[data-month="${i}"]`).value) || 0,
+                semi: parseFloat(document.querySelector(`.t_semi[data-month="${i}"]`).value) || 0,
+                sat: parseFloat(document.querySelector(`.t_sat[data-month="${i}"]`).value) || 0,
+                off: parseFloat(document.querySelector(`.t_off[data-month="${i}"]`).value) || 0,
+                cap: parseFloat(document.querySelector(`.t_cap[data-month="${i}"]`).value) || 0,
+                bill: parseFloat(document.querySelector(`.t_bill[data-month="${i}"]`).value) || 0
+            });
+        }
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute("href", dataStr);
+        dlAnchor.setAttribute("download", `錦雲住宅光儲試算備份-${projectName}.json`);
+        document.body.appendChild(dlAnchor);
+        dlAnchor.click();
+        dlAnchor.remove();
+        window.showToast("📤 成功導出 JSON 本機檔案！您可以將其備份存至您的個人雲端或本地硬碟中。", "success");
+    }
+
+    // --- 本機 JSON 備份導入邏輯 ---
+    function triggerJsonImportClick(event) {
+        event.stopPropagation();
+        document.getElementById('jsonImportInput').click();
+    }
+
+    function importJsonProject(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (!data.projectName || !data.config) {
+                    window.showToast("❌ 格式錯誤：此檔案非本試算系統之合法備份！", "error");
+                    return;
+                }
+
+                // 還原專案名稱
+                document.getElementById('localProjectName').value = data.projectName || "";
+                
+                // 還原方案與設定
+                const cfg = data.config || {};
+                if (cfg.tariffPlan) {
+                    document.getElementById('tariffPlanSelect').value = cfg.tariffPlan;
+                }
+
+                const r = cfg.rates || {};
+                const keysRates = ['sumPeakRate', 'sumSemiPeakRate', 'sumSatSemiRate', 'sumOffPeakRate', 'sumBasicRate', 'nonSumPeakRate', 'nonSumSemiPeakRate', 'nonSumSatSemiRate', 'nonSumOffPeakRate', 'nonSumBasicRate'];
+                keysRates.forEach(k => { if(r[k] !== undefined) document.getElementById(k).value = r[k]; });
+
+                const p = cfg.params || {};
+                const keysParams = ['summerDays', 'nonSummerDays', 'summerMonths', 'nonSummerMonths'];
+                keysParams.forEach(k => { if(p[k] !== undefined) document.getElementById(k).value = p[k]; });
+
+                const l = cfg.load || {};
+                const keysLoad = ['contractCapacity', 'dailyUsage', 'peakUsageRatio', 'annualAvgRate', 'peakTotalUsage', 'peakAvgLoad', 'peakDemand'];
+                keysLoad.forEach(k => { if(l[k] !== undefined) document.getElementById(k).value = l[k]; });
+
+                const s = cfg.solar || {};
+                const keysSolar = ['pvCapacity', 'pvSunHours', 'pvEfficiency', 'pvUnitCost', 'pvSunDays', 'pvSelfUsageRatio', 'trecRate'];
+                keysSolar.forEach(k => { if(s[k] !== undefined) document.getElementById(k).value = s[k]; });
+
+                const est = cfg.storage || {};
+                const keysStorage = ['essCapacity', 'essSets', 'essReservePercent', 'essEfficiency', 'arbDaysSummer', 'arbDaysNonSummer', 'essUnitCost', 'essInstallCost', 'essReduceCap'];
+                keysStorage.forEach(k => { if(est[k] !== undefined) document.getElementById(k).value = est[k]; });
+
+                // 還原 1~12 月用電
+                if (data.monthlyUsages && Array.isArray(data.monthlyUsages)) {
+                    data.monthlyUsages.forEach(item => {
+                        const m = item.month;
+                        document.querySelector(`.t_peak[data-month="${m}"]`).value = item.peak || "";
+                        document.querySelector(`.t_semi[data-month="${m}"]`).value = item.semi || "";
+                        document.querySelector(`.t_sat[data-month="${m}"]`).value = item.sat || "";
+                        document.querySelector(`.t_off[data-month="${m}"]`).value = item.off || "";
+                        document.querySelector(`.t_cap[data-month="${m}"]`).value = item.cap || "20";
+                        document.querySelector(`.t_bill[data-month="${m}"]`).value = item.bill || "";
+                    });
+                }
+
+                // 判斷是否為預設套裝規格之一並自動對齊選單
+                const cap = parseFloat(est.essCapacity);
+                const cost = parseFloat(est.essUnitCost);
+                if (cap === 8 && cost === 13) {
+                    document.getElementById('essPresetSelect').value = 'pack1';
+                } else if (cap === 16 && cost === 22) {
+                    document.getElementById('essPresetSelect').value = 'pack2';
+                } else {
+                    document.getElementById('essPresetSelect').value = 'none';
+                }
+
+                calcTable();
+                calculateAll();
+                window.showToast(`📥 成功還原本機備份檔案：「${data.projectName}」！`, "success");
+            } catch (err) {
+                console.error(err);
+                window.showToast("❌ 解析備份檔案時發生出錯！", "error");
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- 智慧檔案匯入核心邏輯 ---
+    async function handleImportFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        openImportModal();
+
+        const ext = file.name.split('.').pop().toLowerCase();
+        let detectedData = {}; 
+
+        try {
+            if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                
+                detectedData = parseExcelDataSmart(jsonRows);
+            } else if (ext === 'pdf') {
+                const data = await file.arrayBuffer();
+                const fullText = await parsePDFText(data);
+                
+                const result = extractTaipowerDataFromText(fullText);
+                if (result.month) {
+                    detectedData[result.month] = result;
+                } else {
+                    // 若 PDF 帳單無法辨識月份，預設先帶到 1 月，並在視窗中醒目提醒，讓使用者手動指派
+                    detectedData[1] = {
+                        month: 1,
+                        peak: result.peak,
+                        semi: result.semi,
+                        sat: result.sat,
+                        off: result.off,
+                        cap: result.cap,
+                        bill: result.bill,
+                        unresolvedMonth: true
+                    };
+                }
+            } else {
+                window.showToast('不支援此檔案格式！請上傳 Excel (.xlsx, .xls, .csv) 或 PDF 檔案。', 'error');
+                closeImportModal();
+                return;
+            }
+
+            renderImportPreview(detectedData);
+
+        } catch (err) {
+            console.error(err);
+            window.showToast('檔案解析失敗，請確認檔案內容格式是否正確。', 'error');
+            closeImportModal();
+        }
+    }
+
+    // 1. PDF 文字解析器
+    async function parsePDFText(pdfBuffer) {
+        const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+        const pdf = await loadingTask.promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join("\n");
+            fullText += pageText + "\n";
+        }
+        return fullText;
+    }
+
+    // 2. 台電高壓/特高壓 PDF 帳單正則智慧匹配
+    function extractTaipowerDataFromText(text) {
+        const cleanText = text.replace(/[\r]/g, '\n').replace(/\n+/g, '\n');
+        
+        let month = null;
+        let peak = 0;
+        let semi = 0;
+        let sat = 0;
+        let off = 0;
+        let cap = 20;
+        let bill = 0;
+
+        // A. 辨識計費月份
+        const monthPatterns = [
+            /計費年月[：:]\s*(\d+)\s*[\/年]\s*(\d+)/i,
+            /用電年月[：:]\s*(\d+)\s*[\/年]\s*(\d+)/i,
+            /用電期間.*?至\s*(\d+)\s*[\/年]\s*(\d+)/,
+            /(\d+)\s*年\s*(\d+)\s*月/
+        ];
+        for (let p of monthPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                let checkMonth = parseInt(m[2]);
+                if (checkMonth >= 1 && checkMonth <= 12) {
+                    month = checkMonth;
+                    break;
+                }
+            }
+        }
+
+        // B. 辨識契約容量
+        const capPatterns = [
+            /經常契約\s*容量?[：:\s]\s*([\d,]+)/i,
+            /契約容量?[：:\s]\s*([\d,]+)/i,
+            /經常契約\s+([\d,]+)/i
+        ];
+        for (let p of capPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                cap = parseInt(m[1].replace(/,/g, '')) || 20;
+                break;
+            }
+        }
+
+        // C. 辨識尖峰 (經常度數)
+        const peakPatterns = [
+            /經常度數\s*度?[：:\s]\s*([\d,]+)/,
+            /經常\s+([\d,]+)\s*度/,
+            /尖峰度數\s*度?[：:\s]\s*([\d,]+)/,
+            /尖峰\s+([\d,]+)\s*度/,
+            /經常\s+([\d,]+)/
+        ];
+        for (let p of peakPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                peak = parseInt(m[1].replace(/,/g, '')) || 0;
+                break;
+            }
+        }
+
+        // D. 辨識半尖峰
+        const semiPatterns = [
+            /半尖峰度數\s*度?[：:\s]\s*([\d,]+)/,
+            /半尖峰\s+([\d,]+)\s*度/,
+            /半尖峰\s+([\d,]+)/
+        ];
+        for (let p of semiPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                semi = parseInt(m[1].replace(/,/g, '')) || 0;
+                break;
+            }
+        }
+
+        // E. 辨識週六半尖峰
+        const satPatterns = [
+            /週六半尖峰度數\s*度?[：:\s]\s*([\d,]+)/,
+            /週六半尖峰\s+([\d,]+)\s*度/,
+            /週六半尖峰\s+([\d,]+)/,
+            /週六\s+([\d,]+)/
+        ];
+        for (let p of satPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                sat = parseInt(m[1].replace(/,/g, '')) || 0;
+                break;
+            }
+        }
+
+        // F. 辨識離峰
+        const offPatterns = [
+            /離峰度數\s*度?[：:\s]\s*([\d,]+)/,
+            /離峰\s+([\d,]+)\s*度/,
+            /離峰\s+([\d,]+)/
+        ];
+        for (let p of offPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                off = parseInt(m[1].replace(/,/g, '')) || 0;
+                break;
+            }
+        }
+
+        // G. 辨識繳費金額
+        const billPatterns = [
+            /應繳總金額[：:\s]\s*([\d,]+)/,
+            /繳費金額[：:\s]\s*([\d,]+)/,
+            /本期應繳總金額[：:\s]\s*([\d,]+)/,
+            /應繳金額[：:\s]\s*([\d,]+)/
+        ];
+        for (let p of billPatterns) {
+            let m = cleanText.match(p);
+            if (m) {
+                bill = parseInt(m[1].replace(/,/g, '')) || 0;
+                break;
+            }
+        }
+
+        return { month, peak, semi, sat, off, cap, bill };
+    }
+
+    // 3. Excel 多欄位標頭自動辨識與對齊
+    function parseExcelDataSmart(rows) {
+        let headerIndex = -1;
+        let colMap = { peak: -1, semi: -1, sat: -1, off: -1, cap: -1, bill: -1 };
+        
+        // A. 掃描比對找出包含特定中文字的標頭列
+        for (let r = 0; r < rows.length; r++) {
+            let row = rows[r];
+            if (!row) continue;
+            let peakCol = row.findIndex(c => String(c).includes("尖峰"));
+            let semiCol = row.findIndex(c => String(c).includes("半尖峰") && !String(c).includes("週六"));
+            let satCol = row.findIndex(c => String(c).includes("週六") || String(c).includes("六半"));
+            let offCol = row.findIndex(c => String(c).includes("離峰"));
+            let capCol = row.findIndex(c => String(c).includes("契約") || String(c).includes("容量"));
+            let billCol = row.findIndex(c => String(c).includes("金額") || String(c).includes("繳費") || String(c).includes("帳單") || String(c).includes("電費"));
+            
+            if (peakCol !== -1 || offCol !== -1) {
+                headerIndex = r;
+                colMap.peak = peakCol;
+                colMap.semi = semiCol;
+                colMap.sat = satCol;
+                colMap.off = offCol;
+                colMap.cap = capCol;
+                colMap.bill = billCol;
+                break;
+            }
+        }
+
+        let dataMap = {};
+        let isFallback = (headerIndex === -1);
+        let startRow = isFallback ? 0 : headerIndex + 1;
+
+        // B. 逐列提取月份並對齊數值
+        for (let r = startRow; r < rows.length; r++) {
+            let row = rows[r];
+            if (!row || row.length === 0) continue;
+            
+            let firstCell = String(row[0]).trim();
+            let monthMatch = firstCell.match(/^0*([1-9]|1[0-2])月?$/i);
+            
+            // 若為 Fallback 狀態，擴大搜尋行內是否包含 1~12 的月份儲存格
+            if (!monthMatch && isFallback) {
+                for (let colIdx = 0; colIdx < row.length; colIdx++) {
+                    let cellVal = String(row[colIdx]).trim();
+                    let innerMatch = cellVal.match(/^0*([1-9]|1[0-2])月?$/i);
+                    if (innerMatch) {
+                        monthMatch = innerMatch;
+                        break;
+                    }
+                }
+            }
+            
+            if (monthMatch) {
+                let mNum = parseInt(monthMatch[1]);
+                if (isFallback) {
+                    // Fallback 對齊：預設傳統九欄對齊 (1: 尖峰, 2: 半尖峰, 3: 週六, 4: 離峰, 5: 契約, 7: 金額)
+                    dataMap[mNum] = {
+                        peak: parseFloat(String(row[1] || '0').replace(/,/g, '')) || 0,
+                        semi: parseFloat(String(row[2] || '0').replace(/,/g, '')) || 0,
+                        sat: parseFloat(String(row[3] || '0').replace(/,/g, '')) || 0,
+                        off: parseFloat(String(row[4] || '0').replace(/,/g, '')) || 0,
+                        cap: parseFloat(String(row[5] || '20').replace(/,/g, '')) || 20,
+                        bill: parseFloat(String(row[7] !== undefined ? row[7] : row[6] || '0').replace(/,/g, '')) || 0
+                    };
+                } else {
+                    dataMap[mNum] = {
+                        peak: colMap.peak !== -1 ? parseFloat(String(row[colMap.peak] || '0').replace(/,/g, '')) || 0 : 0,
+                        semi: colMap.semi !== -1 ? parseFloat(String(row[colMap.semi] || '0').replace(/,/g, '')) || 0 : 0,
+                        sat: colMap.sat !== -1 ? parseFloat(String(row[colMap.sat] || '0').replace(/,/g, '')) || 0 : 0,
+                        off: colMap.off !== -1 ? parseFloat(String(row[colMap.off] || '0').replace(/,/g, '')) || 0 : 0,
+                        cap: colMap.cap !== -1 ? parseFloat(String(row[colMap.cap] || '20').replace(/,/g, '')) || 20 : 20,
+                        bill: colMap.bill !== -1 ? parseFloat(String(row[colMap.bill] || '0').replace(/,/g, '')) || 0 : 0
+                    };
+                }
+            }
+        }
+        return dataMap;
+    }
+
+    // 4. 渲染匯入數據確認視窗
+    function renderImportPreview(detected) {
+        document.getElementById('importLoading').style.display = 'none';
+        document.getElementById('importContent').style.display = 'block';
+
+        let container = document.getElementById('importDetectedContainer');
+        container.innerHTML = '';
+
+        let unresolvedWarning = "";
+        
+        // 建立表格預覽 HTML
+        let tableHtml = `
+            <table class="stat-table" style="min-width: 100%; font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th width="45">匯入</th>
+                        <th width="60">月份</th>
+                        <th>尖峰度數</th>
+                        <th>半尖峰度數</th>
+                        <th>週六半尖峰</th>
+                        <th>離峰度數</th>
+                        <th>契約容量</th>
+                        <th>繳費金額</th>
+                    </tr>
+                </thead>
+                <tbody id="importPreviewTableBody">
+        `;
+
+        for (let m = 1; m <= 12; m++) {
+            let item = detected[m];
+            let isChecked = item ? 'checked' : '';
+            let peak = item ? item.peak : "";
+            let semi = item ? item.semi : "";
+            let sat = item ? item.sat : "";
+            let off = item ? item.off : "";
+            let cap = item ? item.cap : "20";
+            let bill = item ? item.bill : "";
+
+            if (item && item.unresolvedMonth) {
+                isChecked = 'checked';
+                unresolvedWarning = `
+                    <div style="background: #fff3cd; border: 1px solid #ffeeba; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; color: #856404; line-height: 1.5;">
+                        ⚠️ <strong>系統通知：</strong>已成功提取 PDF 帳單數據，但<strong>無法確定對應的月份</strong>。已預設列於「1月」，您可以自行換勾至正確的月份，確認數據無誤後再匯入。
+                    </div>
+                `;
+            }
+
+            tableHtml += `
+                <tr data-month="${m}">
+                    <td><input type="checkbox" ${isChecked} class="import-row-select" data-month="${m}" style="width: 18px; height: 18px; cursor: pointer;"></td>
+                    <td><strong>${m}月</strong></td>
+                    <td><input type="number" class="imp_peak" style="width: 100%; padding: 4px; text-align: right;" value="${peak}"></td>
+                    <td><input type="number" class="imp_semi" style="width: 100%; padding: 4px; text-align: right;" value="${semi}"></td>
+                    <td><input type="number" class="imp_sat" style="width: 100%; padding: 4px; text-align: right;" value="${sat}"></td>
+                    <td><input type="number" class="imp_off" style="width: 100%; padding: 4px; text-align: right;" value="${off}"></td>
+                    <td><input type="number" class="imp_cap" style="width: 100%; padding: 4px; text-align: right;" value="${cap}"></td>
+                    <td><input type="number" class="imp_bill" style="width: 100%; padding: 4px; text-align: right;" value="${bill}"></td>
+                </tr>
+            `;
+        }
+
+        tableHtml += `</tbody></table>`;
+
+        if (unresolvedWarning) {
+            container.innerHTML += unresolvedWarning;
+        }
+        container.innerHTML += tableHtml;
+    }
+
+    // 5. 將確認後的數據正式寫入歷史用電報表
+    function executeImportWrite() {
+        const rows = document.querySelectorAll('#importPreviewTableBody tr');
+        let writeCount = 0;
+
+        rows.forEach(row => {
+            const chk = row.querySelector('.import-row-select');
+            if (chk && chk.checked) {
+                const m = chk.getAttribute('data-month');
+                
+                const peak = parseFloat(row.querySelector('.imp_peak').value) || 0;
+                const semi = parseFloat(row.querySelector('.imp_semi').value) || 0;
+                const sat = parseFloat(row.querySelector('.imp_sat').value) || 0;
+                const off = parseFloat(row.querySelector('.imp_off').value) || 0;
+                const cap = parseFloat(row.querySelector('.imp_cap').value) || 20;
+                const bill = parseFloat(row.querySelector('.imp_bill').value) || 0;
+
+                // 填入 UI 輸入框
+                document.querySelector(`.t_peak[data-month="${m}"]`).value = peak || "";
+                document.querySelector(`.t_semi[data-month="${m}"]`).value = semi || "";
+                document.querySelector(`.t_sat[data-month="${m}"]`).value = sat || "";
+                document.querySelector(`.t_off[data-month="${m}"]`).value = off || "";
+                document.querySelector(`.t_cap[data-month="${m}"]`).value = cap;
+                document.querySelector(`.t_bill[data-month="${m}"]`).value = bill || "";
+                
+                writeCount++;
+            }
+        });
+
+        if (writeCount > 0) {
+            calcTable();
+            calculateAll();
+            closeImportModal();
+            window.showToast(`✅ 成功匯入並更新了 ${writeCount} 個月份的用電數據！`, 'success');
+        } else {
+            window.showToast('請至少勾選一列要寫入的月份數據！', 'warning');
+        }
+    }
+
+
+    // --- 【全新匯入】電價方案資料庫 ---
+    // 已精簡僅保留表燈住商相關系列（已刪除凍漲選項）
+    const tariffPlans = {
+        'adj_3_2_1_1': { name: "表燈(住商)電價 (二)時間電價 1.簡易型 (1)二段式", summer: { peak: 5.16, semi: 0, satSemi: 0, off: 2.06, basic: 75 }, nonSummer: { peak: 4.93, semi: 0, satSemi: 0, off: 1.99, basic: 75 } },
+        'adj_3_2_1_2': { name: "表燈(住商)電價 (二)時間電價 1.簡易型 (2)三段式", summer: { peak: 7.13, semi: 4.69, satSemi: 0, off: 2.06, basic: 75 }, nonSummer: { peak: 0, semi: 4.48, satSemi: 2.06, off: 1.99, basic: 75 } },
+        'adj_3_2_2_1': { name: "表燈(住商)電價 (二)時間電價 2.標準型 (1)二段式", summer: { peak: 5.54, semi: 0, satSemi: 2.76, off: 2.27, basic: 236.2 }, nonSummer: { peak: 5.39, semi: 0, satSemi: 2.65, off: 2.15, basic: 173.2 } },
+        'adj_3_2_2_2': { name: "表燈(住商)電價 (二)時間電價 2.標準型 (2)三段式", summer: { peak: 8.12, semi: 5.02, satSemi: 2.50, off: 2.23, basic: 236.2 }, nonSummer: { peak: 0, semi: 4.86, satSemi: 2.40, off: 2.12, basic: 173.2 } }
+    };
+
+    // --- 月份天數與夏月比例設定 ---
+    const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const summerRatio = [0, 0, 0, 0, 16/31, 1, 1, 1, 1, 15/31, 0, 0];
+
+    function fmtNumber(num, decimals = 0) {
+        if (isNaN(num) || num === null) return "0";
+        return Number(num).toLocaleString('zh-TW', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    // 將數字格式化字串轉回浮點數
+    function getVal(id) {
+        let el = document.getElementById(id);
+        if(!el) return 0;
+        let val = parseFloat(el.value.replace(/,/g, ''));
+        return isNaN(val) ? 0 : val;
+    }
+
+    function setOutput(id, val, decimals = 0) {
+        document.getElementById(id).value = fmtNumber(val, decimals);
+    }
+
+    // --- 表格初始化與計算 ---
+    function initTable() {
+        const tbody = document.getElementById('usageTableBody');
+        let html = '';
+        for (let i = 1; i <= 12; i++) {
+            html += `
+                <tr>
+                    <td>${i}月</td>
+                    <td><input type="number" class="t_peak" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_semi" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_sat" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_off" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_cap" data-month="${i}" value="20" oninput="calcTable()"></td>
+                    <td><input type="text" class="t_total table-readonly" readonly></td>
+                    <td><input type="number" class="t_bill" data-month="${i}" value="" oninput="calcTable()"></td>
+                </tr>`;
+        }
+        tbody.innerHTML = html;
+        calcTable();
+    }
+
+    // 將表格加總與佔比算出
+    function calcTable() {
+        let sumPeak=0, sumSemi=0, sumSat=0, sumOff=0, sumCap=0, sumTotal=0, sumBill=0;
+        let activeCapMonths = 0;
+
+        // 佔比統計
+        let sumSummerPeak=0, sumSummerSemi=0, sumSummerTotal=0;
+        let sumNonPeak=0, sumNonSemi=0, sumNonTotal=0;
+
+        for (let i = 1; i <= 12; i++) {
+            let mIndex = i - 1;
+            let peak = parseFloat(document.querySelector(`.t_peak[data-month="${i}"]`).value) || 0;
+            let semi = parseFloat(document.querySelector(`.t_semi[data-month="${i}"]`).value) || 0;
+            let sat = parseFloat(document.querySelector(`.t_sat[data-month="${i}"]`).value) || 0;
+            let off = parseFloat(document.querySelector(`.t_off[data-month="${i}"]`).value) || 0;
+            let cap = parseFloat(document.querySelector(`.t_cap[data-month="${i}"]`).value) || 0;
+            let bill = parseFloat(document.querySelector(`.t_bill[data-month="${i}"]`).value) || 0;
+            
+            let total = peak + semi + sat + off;
+            document.querySelectorAll('.t_total')[mIndex].value = fmtNumber(total);
+
+            sumPeak += peak; sumSemi += semi; sumSat += sat; sumOff += off; sumTotal += total; sumBill += bill;
+            if(cap > 0) { sumCap += cap; activeCapMonths++; }
+
+            let sRatio = summerRatio[mIndex];
+            let nRatio = 1 - sRatio;
+            
+            sumSummerPeak += peak * sRatio;
+            sumSummerSemi += semi * sRatio;
+            sumSummerTotal += total * sRatio;
+
+            sumNonPeak += peak * nRatio;
+            sumNonSemi += semi * nRatio;
+            sumNonTotal += total * nRatio;
+        }
+
+        setOutput('sum_peak', sumPeak); setOutput('sum_semi', sumSemi); setOutput('sum_sat', sumSat);
+        setOutput('sum_off', sumOff); setOutput('sum_total', sumTotal); setOutput('sum_bill', sumBill);
+
+        setOutput('avg_peak', sumPeak/365, 1); setOutput('avg_semi', sumSemi/365, 1); setOutput('avg_sat', sumSat/365, 1);
+        setOutput('avg_off', sumOff/365, 1); setOutput('avg_total', sumTotal/365, 1); setOutput('avg_bill', sumBill/365, 0);
+        setOutput('avg_cap', activeCapMonths > 0 ? sumCap/activeCapMonths : 0, 1);
+
+        let ratioSumPeak = sumSummerTotal > 0 ? (sumSummerPeak / sumSummerTotal) * 100 : 0;
+        let ratioSumSemi = sumSummerTotal > 0 ? (sumSummerSemi / sumSummerTotal) * 100 : 0;
+        let ratioNonPeak = sumNonTotal > 0 ? (sumNonPeak / sumNonTotal) * 100 : 0;
+        let ratioNonSemi = sumNonTotal > 0 ? (sumNonSemi / sumNonTotal) * 100 : 0;
+
+        document.getElementById('ratio_sum_peak').innerText = ratioSumPeak.toFixed(1) + "%";
+        document.getElementById('ratio_sum_semi').innerText = ratioSumSemi.toFixed(1) + "%";
+        document.getElementById('ratio_non_peak').innerText = ratioNonPeak.toFixed(1) + "%";
+        document.getElementById('ratio_non_semi').innerText = ratioNonSemi.toFixed(1) + "%";
+    }
+
+    // 同步至設定
+    function syncTableToSettings() {
+        let avgTotal = getVal('avg_total');
+        let ratioSumPeakStr = document.getElementById('ratio_sum_peak').innerText.replace('%','');
+        let avgCap = getVal('avg_cap');
+        
+        if(avgTotal > 0) {
+            document.getElementById('dailyUsage').value = avgTotal.toFixed(0);
+            document.getElementById('peakUsageRatio').value = parseFloat(ratioSumPeakStr).toFixed(1);
+            document.getElementById('contractCapacity').value = avgCap.toFixed(0);
+            calculateAll();
+            window.showToast('✅ 報表日均用電量、佔比與契約容量已成功帶入下方試算設定！', 'success');
+        } else {
+            window.showToast('請先在報表中輸入有效數據喔！', 'warning');
+        }
+    }
+
+    function loadTariffPlan() {
+        const planKey = document.getElementById('tariffPlanSelect').value;
+        if (planKey === 'custom') return;
+        
+        const plan = tariffPlans[planKey];
+        if(plan) {
+            document.getElementById('sumPeakRate').value = plan.summer.peak.toFixed(2);
+            document.getElementById('sumSemiPeakRate').value = plan.summer.semi.toFixed(2);
+            document.getElementById('sumSatSemiRate').value = plan.summer.satSemi.toFixed(2);
+            document.getElementById('sumOffPeakRate').value = plan.summer.off.toFixed(2);
+            document.getElementById('sumBasicRate').value = plan.summer.basic.toFixed(1);
+
+            document.getElementById('nonSumPeakRate').value = plan.nonSummer.peak.toFixed(2);
+            document.getElementById('nonSumSemiPeakRate').value = plan.nonSummer.semi.toFixed(2);
+            document.getElementById('nonSumSatSemiRate').value = plan.nonSummer.satSemi.toFixed(2);
+            document.getElementById('nonSumOffPeakRate').value = plan.nonSummer.off.toFixed(2);
+            document.getElementById('nonSumBasicRate').value = plan.nonSummer.basic.toFixed(1);
+            
+            calculateAll();
+        }
+    }
+
+    // 帶入儲能預設方案
+    function applyEssPreset() {
+        const preset = document.getElementById('essPresetSelect').value;
+        if (preset === 'pack1') {
+            document.getElementById('essCapacity').value = 8;
+            document.getElementById('essReduceCap').value = 6;
+            document.getElementById('essUnitCost').value = 13;
+            document.getElementById('essSets').value = 1;
+            document.getElementById('essInstallCost').value = 0;
+        } else if (preset === 'pack2') {
+            document.getElementById('essCapacity').value = 16;
+            document.getElementById('essReduceCap').value = 11;
+            document.getElementById('essUnitCost').value = 22;
+            document.getElementById('essSets').value = 1;
+            document.getElementById('essInstallCost').value = 0;
+        }
+        calculateAll();
+    }
+
+    // 核心計算引擎
+    function calculateAll() {
+        let pSumPeak = getVal('sumPeakRate'), pSumSemi = getVal('sumSemiPeakRate'), pSumOff = getVal('sumOffPeakRate'), pSumBasic = getVal('sumBasicRate');
+        let pNonSumPeak = getVal('nonSumPeakRate'), pNonSumSemi = getVal('nonSumSemiPeakRate'), pNonSumOff = getVal('nonSumOffPeakRate'), pNonSumBasic = getVal('nonSumBasicRate');
+        let daysSummer = getVal('summerDays'), daysNonSummer = getVal('nonSummerDays');
+        let monthsSummer = getVal('summerMonths'), monthsNonSummer = getVal('nonSummerMonths');
+
+        let pvCap = getVal('pvCapacity'), pvUnitCost = getVal('pvUnitCost'), pvHours = getVal('pvSunHours');
+        let pvEff = getVal('pvEfficiency') / 100, pvDays = getVal('pvSunDays'), trecRate = getVal('trecRate');
+        let pvSelfUsagePct = getVal('pvSelfUsageRatio') / 100; 
+
+        let essCap = getVal('essCapacity'), essSets = getVal('essSets');
+        let essReservePct = getVal('essReservePercent') / 100; 
+        let essEff = getVal('essEfficiency') / 100;
+        let arbDaysSummer = getVal('arbDaysSummer'), arbDaysNonSummer = getVal('arbDaysNonSummer');
+        let essUnitCost = getVal('essUnitCost') * 10000, essInstallCost = getVal('essInstallCost') * 10000;
+        let essReduceCap = getVal('essReduceCap');
+
+        let avgSummer = (pSumPeak + pSumSemi + pSumOff) / 3; 
+        setOutput('avgSummerRate', avgSummer, 2);
+
+        let pvDailyGenCalc = pvCap * pvHours * pvEff; 
+        setOutput('pvDailyGen', pvDailyGenCalc, 1);
+
+        let pvTotalCost = pvCap * pvUnitCost;
+        let pvAnnualGen = pvDailyGenCalc * pvDays; 
+        
+        // 判斷白天發電時段適用費率：若半尖峰費率為 0，則白天屬於尖峰時段（適用於兩段式電價）
+        let solarSummerRate = pSumSemi > 0 ? pSumSemi : pSumPeak;
+        let solarNonSummerRate = pNonSumSemi > 0 ? pNonSumSemi : pNonSumPeak;
+        let weightedSolarRate = ((solarSummerRate * daysSummer) + (solarNonSummerRate * daysNonSummer)) / 365;
+        
+        // 【新導入限制公式】：若有填寫日平均用電量，則自發自用每日上限不得超過該用電量做物理攔截
+        let dailyUsageLimit = getVal('dailyUsage');
+        let finalPvAnnualGenForSavings = pvAnnualGen;
+        if (dailyUsageLimit > 0) {
+            let constrainedDailyGen = Math.min(pvDailyGenCalc, dailyUsageLimit);
+            finalPvAnnualGenForSavings = constrainedDailyGen * pvDays;
+        }
+        
+        let pvAnnualSavings = finalPvAnnualGenForSavings * weightedSolarRate * pvSelfUsagePct * 0.95; 
+        let pvTrecBenefit = pvAnnualGen * trecRate;
+
+        setOutput('pvTotalCost', pvTotalCost);
+        setOutput('pvAnnualGen', pvAnnualGen);
+        setOutput('pvAnnualSavings', pvAnnualSavings);
+
+        let essTotalCap = essCap * essSets;
+        let essReserveKwh = essTotalCap * essReservePct; 
+        let essDailyDischarge = (essTotalCap - essReserveKwh) * essEff;
+        
+        let sumSpread = pSumPeak - pSumOff;
+        let nonSumSpread = pNonSumSemi - pNonSumOff;
+        if(pNonSumPeak > 0) nonSumSpread = pNonSumPeak - pNonSumOff;
+
+        // 【新導入限制公式】：儲能有效套利放電量不得大於負載設定中的「尖峰時段總用電量」
+        let peakTotalUsageLimit = getVal('peakTotalUsage');
+        let effectiveEssDischarge = essDailyDischarge;
+        if (peakTotalUsageLimit > 0) {
+            effectiveEssDischarge = Math.min(essDailyDischarge, peakTotalUsageLimit);
+        }
+
+        let essArbitrage = ((effectiveEssDischarge * sumSpread * arbDaysSummer) + 
+                           (effectiveEssDischarge * nonSumSpread * arbDaysNonSummer)) * 0.95;
+        
+        let essDemandSavings = (essReduceCap * pSumBasic * monthsSummer) + 
+                               (essReduceCap * pNonSumBasic * monthsNonSummer);
+
+        let essTotalCostFinal = (essUnitCost * essSets) + essInstallCost;
+
+        setOutput('essDailyDischarge', essDailyDischarge, 1);
+        setOutput('essSumSpread', sumSpread, 2);
+        setOutput('essNonSumSpread', nonSumSpread, 2);
+        setOutput('essTotalCost', essTotalCostFinal);
+        setOutput('essArbitrageSavings', essArbitrage);
+        setOutput('essDemandSavings', essDemandSavings);
+
+        // 【新導入防錯驗證】：檢查調降後的容量是否低於需量
+        let contractCap = getVal('contractCapacity');
+        let peakDemandVal = getVal('peakDemand');
+        let essReduceCapInput = document.getElementById('essReduceCap');
+        if (contractCap > 0 && peakDemandVal > 0 && (contractCap - essReduceCap) < peakDemandVal) {
+            essReduceCapInput.style.color = 'var(--danger)';
+            essReduceCapInput.title = '警告：調降後契約容量將低於尖峰需量，可能引發超約罰款！';
+        } else {
+            essReduceCapInput.style.color = '';
+            essReduceCapInput.title = '';
+        }
+
+        let totalCost = pvTotalCost + essTotalCostFinal;
+        let totalBenefits = pvAnnualSavings + pvTrecBenefit + essArbitrage + essDemandSavings;
+        let roi = totalCost / totalBenefits;
+
+        setOutput('totalProjectCost', totalCost);
+        setOutput('totalAnnualBenefits', totalBenefits);
+        setOutput('roiYears', roi, 1);
+
+        setOutput('benefitPv', pvAnnualSavings);
+        setOutput('benefitTrec', pvTrecBenefit);
+        setOutput('benefitArbitrage', essArbitrage);
+        setOutput('benefitDemand', essDemandSavings);
+    }
+
+    // --- 浮動計算機腳本 ---
+    let calcStr = "0";
+    function toggleCalc() {
+        const container = document.getElementById('calcContainer');
+        container.classList.toggle('active');
+    }
+    
+    function calcAction(val) {
+        if(val === 'C') {
+            calcStr = "0";
+        } else if(val === '=') {
+            try {
+                let safeStr = calcStr.replace(/×/g, '*').replace(/÷/g, '/');
+                if(/^[0-9+\-*/()..\s]*$/.test(safeStr)) {
+                    let res = new Function('return ' + safeStr)();
+                    calcStr = Number.isInteger(res) ? res.toString() : res.toFixed(4).replace(/\.?0+$/, '');
+                } else { calcStr = "Error"; }
+            } catch(e) {
+                calcStr = "Error";
+            }
+        } else {
+            if(calcStr === "0" || calcStr === "Error") {
+                if(["+", "-", "*", "/", "×", "÷"].includes(val)){
+                    calcStr += val;
+                } else {
+                    calcStr = val;
+                }
+            } else {
+                calcStr += val;
+            }
+        }
+        document.getElementById('calcDisplayStr').value = calcStr;
+    }
+
+    document.querySelectorAll('input:not(.calc-display)').forEach(input => {
+        if(!input.classList.contains('t_peak') && !input.classList.contains('t_semi') && !input.classList.contains('t_sat') && !input.classList.contains('t_off') && !input.classList.contains('t_cap') && !input.classList.contains('t_bill')){
+             input.addEventListener('input', calculateAll);
+        }
+    });
+
+    // 監聽儲能手動修改時，將快速選單切回「自訂」
+    const storageInputIds = ['essCapacity', 'essSets', 'essReservePercent', 'essEfficiency', 'arbDaysSummer', 'arbDaysNonSummer', 'essUnitCost', 'essInstallCost', 'essReduceCap'];
+    storageInputIds.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', () => {
+                document.getElementById('essPresetSelect').value = 'none';
+            });
+        }
+    });
+
+    window.onload = () => {
+        initTable();
+        // 預設選擇方案一，快速將數據帶入
+        document.getElementById('essPresetSelect').value = 'pack1';
+        applyEssPreset();
+        loadTariffPlan(); 
+        calculateAll();   
+    };
+</script>
+</body>
+</html>

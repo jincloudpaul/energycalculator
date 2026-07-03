@@ -185,7 +185,7 @@
         
         <div class="form-group">
             <label>選擇預設電價方案：</label>
-            <select id="tariffPlanSelect" onchange="loadTariffPlan()">
+            <select id="tariffPlanSelect">
                 <optgroup label="調整後各類用電電價表 (表燈住商)">
                     <option value="adj_3_2_1_1">表燈(住商)電價 (二)時間電價 1.簡易型時間電價 (1)二段式</option>
                     <option value="adj_3_2_1_2">表燈(住商)電價 (二)時間電價 1.簡易型時間電價 (2)三段式</option>
@@ -313,7 +313,7 @@
         <h2>4. 太陽能發電系統建置評估 (請手動輸入參數)</h2>
         <div class="grid grid-4">
             <div class="form-group"><label>太陽能建置容量 (光電瓦數)</label><div class="flex-row"><input type="number" id="pvCapacity" value="" placeholder="例如: 5"><span class="unit">kWp</span></div></div>
-            <div class="form-group"><label>有效日照時數 (日平均)</label><div class="flex-row"><input type="number" id="pvSunHours" value="" placeholder="例如: 3.5" step="0.1"><span class="unit">小時</span></div></div>
+            <div class="form-group"><label>有效日照時數 (日平均)</label><div class="flex-row"><input type="number" id="pvSunHours" value="" placeholder="placeholder: 3.5" step="0.1"><span class="unit">小時</span></div></div>
             <div class="form-group"><label>系統效率值 (PR)</label><div class="flex-row"><input type="number" id="pvEfficiency" value="" placeholder="例如: 80" step="1"><span class="unit">%</span></div></div>
             <div class="form-group"><label>日均發電量 (瓦數*時數*效率)</label><div class="flex-row"><input type="text" id="pvDailyGen" readonly style="color: #d35400;"><span class="unit">度/日</span></div></div>
 
@@ -337,7 +337,7 @@
         <div style="background: var(--success-light); border: 2px solid var(--success); border-radius: var(--radius); padding: 15px; margin-bottom: 20px;">
             <div class="form-group" style="margin-bottom: 0;">
                 <label style="color: #1e7e34; font-weight: bold; font-size: 0.95rem;">⚡ 快速選擇儲能設備規格：</label>
-                <select id="essPresetSelect" onchange="applyEssPreset()" style="border-color: var(--success); font-weight: bold; color: var(--dark);">
+                <select id="essPresetSelect" style="border-color: var(--success); font-weight: bold; color: var(--dark);">
                     <option value="pack1">方案一：8度電(容量) / 6kW(功率) 套裝 (價格：13 萬元)</option>
                     <option value="pack2">方案二：16度電(容量) / 11kW(功率) 套裝 (價格：22 萬元)</option>
                     <option value="none">-- 手動輸入 / 自訂規格 --</option>
@@ -1121,17 +1121,314 @@
             calcTable();
             calculateAll();
             closeImportModal();
-            window.showToast('✅ 成功匯入並更新了 ${writeCount} 個月份的用電數據！', 'success');
+            window.showToast(`✅ 成功匯入並更新了 ${writeCount} 個月份的用電數據！`, 'success');
         } else {
             window.showToast('請至少勾選一列要寫入的月份數據！', 'warning');
         }
     }
 
-    document.querySelectorAll('input:not(.calc-display)').forEach(input => {
-        if(!input.classList.contains('t_peak') && !input.classList.contains('t_semi') && !input.classList.contains('t_sat') && !input.classList.contains('t_off') && !input.classList.contains('t_cap') && !input.classList.contains('t_bill')){
-             input.addEventListener('input', calculateAll);
+
+    // --- 【全新匯入】電價方案資料庫 ---
+    // 已精簡僅保留表燈住商相關系列（已刪除凍漲選項）
+    const tariffPlans = {
+        'adj_3_2_1_1': { name: "表燈(住商)電價 (二)時間電價 1.簡易型 (1)二段式", summer: { peak: 5.16, semi: 0, satSemi: 0, off: 2.06, basic: 75 }, nonSummer: { peak: 4.93, semi: 0, satSemi: 0, off: 1.99, basic: 75 } },
+        'adj_3_2_1_2': { name: "表燈(住商)電價 (二)時間電價 1.簡易型 (2)三段式", summer: { peak: 7.13, semi: 4.69, satSemi: 0, off: 2.06, basic: 75 }, nonSummer: { peak: 0, semi: 4.48, satSemi: 2.06, off: 1.99, basic: 75 } },
+        'adj_3_2_2_1': { name: "表燈(住商)電價 (二)時間電價 2.標準型 (1)二段式", summer: { peak: 5.54, semi: 0, satSemi: 2.76, off: 2.27, basic: 236.2 }, nonSummer: { peak: 5.39, semi: 0, satSemi: 2.65, off: 2.15, basic: 173.2 } },
+        'adj_3_2_2_2': { name: "表燈(住商)電價 (二)時間電價 2.標準型 (2)三段式", summer: { peak: 8.12, semi: 5.02, satSemi: 2.50, off: 2.23, basic: 236.2 }, nonSummer: { peak: 0, semi: 4.86, satSemi: 2.40, off: 2.12, basic: 173.2 } }
+    };
+
+    // --- 月份天數與夏月比例設定 ---
+    const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const summerRatio = [0, 0, 0, 0, 16/31, 1, 1, 1, 1, 15/31, 0, 0];
+
+    function fmtNumber(num, decimals = 0) {
+        if (isNaN(num) || num === null) return "0";
+        return Number(num).toLocaleString('zh-TW', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    // 將數字格式化字串轉回浮點數
+    function getVal(id) {
+        let el = document.getElementById(id);
+        if(!el) return 0;
+        let val = parseFloat(el.value.replace(/,/g, ''));
+        return isNaN(val) ? 0 : val;
+    }
+
+    // 將結果輸出到頁面
+    function setOutput(id, val, decimals = 0) {
+        let el = document.getElementById(id);
+        if(el) el.value = fmtNumber(val, decimals);
+    }
+
+    // --- 表格初始化與計算 ---
+    function initTable() {
+        const tbody = document.getElementById('usageTableBody');
+        let html = '';
+        for (let i = 1; i <= 12; i++) {
+            html += `
+                <tr>
+                    <td>${i}月</td>
+                    <td><input type="number" class="t_peak" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_semi" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_sat" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_off" data-month="${i}" value="" oninput="calcTable()"></td>
+                    <td><input type="number" class="t_cap" data-month="${i}" value="20" oninput="calcTable()"></td>
+                    <td><input type="text" class="t_total table-readonly" readonly></td>
+                    <td><input type="number" class="t_bill" data-month="${i}" value="" oninput="calcTable()"></td>
+                </tr>`;
         }
-    });
+        tbody.innerHTML = html;
+        calcTable();
+    }
+
+    // 將表格加總與佔比算出
+    function calcTable() {
+        let sumPeak=0, sumSemi=0, sumSat=0, sumOff=0, sumCap=0, sumTotal=0, sumBill=0;
+        let activeCapMonths = 0;
+
+        // 佔比統計
+        let sumSummerPeak=0, sumSummerSemi=0, sumSummerTotal=0;
+        let sumNonPeak=0, sumNonSemi=0, sumNonTotal=0;
+
+        for (let i = 1; i <= 12; i++) {
+            let mIndex = i - 1;
+            let peak = parseFloat(document.querySelector(`.t_peak[data-month="${i}"]`).value) || 0;
+            let semi = parseFloat(document.querySelector(`.t_semi[data-month="${i}"]`).value) || 0;
+            let sat = parseFloat(document.querySelector(`.t_sat[data-month="${i}"]`).value) || 0;
+            let off = parseFloat(document.querySelector(`.t_off[data-month="${i}"]`).value) || 0;
+            let cap = parseFloat(document.querySelector(`.t_cap[data-month="${i}"]`).value) || 0;
+            let bill = parseFloat(document.querySelector(`.t_bill[data-month="${i}"]`).value) || 0;
+            
+            let total = peak + semi + sat + off;
+            document.querySelectorAll('.t_total')[mIndex].value = fmtNumber(total);
+
+            sumPeak += peak; sumSemi += semi; sumSat += sat; sumOff += off; sumTotal += total; sumBill += bill;
+            if(cap > 0) { sumCap += cap; activeCapMonths++; }
+
+            let sRatio = summerRatio[mIndex];
+            let nRatio = 1 - sRatio;
+            
+            sumSummerPeak += peak * sRatio;
+            sumSummerSemi += semi * sRatio;
+            sumSummerTotal += total * sRatio;
+
+            sumNonPeak += peak * nRatio;
+            sumNonSemi += semi * nRatio;
+            sumNonTotal += total * nRatio;
+        }
+
+        setOutput('sum_peak', sumPeak); setOutput('sum_semi', sumSemi); setOutput('sum_sat', sumSat);
+        setOutput('sum_off', sumOff); setOutput('sum_total', sumTotal); setOutput('sum_bill', sumBill);
+
+        setOutput('avg_peak', sumPeak/365, 1); setOutput('avg_semi', sumSemi/365, 1); setOutput('avg_sat', sumSat/365, 1);
+        setOutput('avg_off', sumOff/365, 1); setOutput('avg_total', sumTotal/365, 1); setOutput('avg_bill', sumBill/365, 0);
+        setOutput('avg_cap', activeCapMonths > 0 ? sumCap/activeCapMonths : 0, 1);
+
+        let ratioSumPeak = sumSummerTotal > 0 ? (sumSummerPeak / sumSummerTotal) * 100 : 0;
+        let ratioSumSemi = sumSummerTotal > 0 ? (sumSummerSemi / sumSummerTotal) * 100 : 0;
+        let ratioNonPeak = sumNonTotal > 0 ? (sumNonPeak / sumNonTotal) * 100 : 0;
+        let ratioNonSemi = sumNonTotal > 0 ? (sumNonSemi / sumNonTotal) * 100 : 0;
+
+        document.getElementById('ratio_sum_peak').innerText = ratioSumPeak.toFixed(1) + "%";
+        document.getElementById('ratio_sum_semi').innerText = ratioSumSemi.toFixed(1) + "%";
+        document.getElementById('ratio_non_peak').innerText = ratioNonPeak.toFixed(1) + "%";
+        document.getElementById('ratio_non_semi').innerText = ratioNonSemi.toFixed(1) + "%";
+    }
+
+    // 同步至設定
+    function syncTableToSettings() {
+        let avgTotal = getVal('avg_total');
+        let ratioSumPeakStr = document.getElementById('ratio_sum_peak').innerText.replace('%','');
+        let avgCap = getVal('avg_cap');
+        
+        if(avgTotal > 0) {
+            document.getElementById('dailyUsage').value = avgTotal.toFixed(0);
+            document.getElementById('peakUsageRatio').value = parseFloat(ratioSumPeakStr).toFixed(1);
+            document.getElementById('contractCapacity').value = avgCap.toFixed(0);
+            calculateAll();
+            window.showToast('✅ 報表日均用電量、佔比與契約容量已成功帶入下方試算設定！', 'success');
+        } else {
+            window.showToast('請先在報表中輸入有效數據喔！', 'warning');
+        }
+    }
+
+    function loadTariffPlan() {
+        const planKey = document.getElementById('tariffPlanSelect').value;
+        if (planKey === 'custom') return;
+        
+        const plan = tariffPlans[planKey];
+        if(plan) {
+            document.getElementById('sumPeakRate').value = plan.summer.peak.toFixed(2);
+            document.getElementById('sumSemiPeakRate').value = plan.summer.semi.toFixed(2);
+            document.getElementById('sumSatSemiRate').value = plan.summer.satSemi.toFixed(2);
+            document.getElementById('sumOffPeakRate').value = plan.summer.off.toFixed(2);
+            document.getElementById('sumBasicRate').value = plan.summer.basic.toFixed(1);
+
+            document.getElementById('nonSumPeakRate').value = plan.nonSummer.peak.toFixed(2);
+            document.getElementById('nonSumSemiPeakRate').value = plan.nonSummer.semi.toFixed(2);
+            document.getElementById('nonSumSatSemiRate').value = plan.nonSummer.satSemi.toFixed(2);
+            document.getElementById('nonSumOffPeakRate').value = plan.nonSummer.off.toFixed(2);
+            document.getElementById('nonSumBasicRate').value = plan.nonSummer.basic.toFixed(1);
+            
+            calculateAll();
+        }
+    }
+
+    // 帶入儲能預設方案
+    function applyEssPreset() {
+        const preset = document.getElementById('essPresetSelect').value;
+        if (preset === 'pack1') {
+            document.getElementById('essCapacity').value = 8;
+            document.getElementById('essReduceCap').value = 6;
+            document.getElementById('essUnitCost').value = 13;
+            document.getElementById('essSets').value = 1;
+            document.getElementById('essInstallCost').value = 0;
+        } else if (preset === 'pack2') {
+            document.getElementById('essCapacity').value = 16;
+            document.getElementById('essReduceCap').value = 11;
+            document.getElementById('essUnitCost').value = 22;
+            document.getElementById('essSets').value = 1;
+            document.getElementById('essInstallCost').value = 0;
+        }
+        calculateAll();
+    }
+
+    // 核心計算引擎
+    function calculateAll() {
+        let pSumPeak = getVal('sumPeakRate'), pSumSemi = getVal('sumSemiPeakRate'), pSumOff = getVal('sumOffPeakRate'), pSumBasic = getVal('sumBasicRate');
+        let pNonSumPeak = getVal('nonSumPeakRate'), pNonSumSemi = getVal('nonSumSemiPeakRate'), pNonSumOff = getVal('nonSumOffPeakRate'), pNonSumBasic = getVal('nonSumBasicRate');
+        let daysSummer = getVal('summerDays'), daysNonSummer = getVal('nonSummerDays');
+        let monthsSummer = getVal('summerMonths'), monthsNonSummer = getVal('nonSummerMonths');
+
+        let pvCap = getVal('pvCapacity'), pvUnitCost = getVal('pvUnitCost'), pvHours = getVal('pvSunHours');
+        let pvEff = getVal('pvEfficiency') / 100, pvDays = getVal('pvSunDays'), trecRate = getVal('trecRate');
+        let pvSelfUsagePct = getVal('pvSelfUsageRatio') / 100; 
+
+        let essCap = getVal('essCapacity'), essSets = getVal('essSets');
+        let essReservePct = getVal('essReservePercent') / 100; 
+        let essEff = getVal('essEfficiency') / 100;
+        let arbDaysSummer = getVal('arbDaysSummer'), arbDaysNonSummer = getVal('arbDaysNonSummer');
+        let essUnitCost = getVal('essUnitCost') * 10000, essInstallCost = getVal('essInstallCost') * 10000;
+        let essReduceCap = getVal('essReduceCap');
+
+        let avgSummer = (pSumPeak + pSumSemi + pSumOff) / 3; 
+        setOutput('avgSummerRate', avgSummer, 2);
+
+        let pvDailyGenCalc = pvCap * pvHours * pvEff; 
+        setOutput('pvDailyGen', pvDailyGenCalc, 1);
+
+        let pvTotalCost = pvCap * pvUnitCost;
+        let pvAnnualGen = pvDailyGenCalc * pvDays; 
+        
+        // 判斷白天發電時段適用費率：若半尖峰費率為 0，則白天屬於尖峰時段（適用於兩段式電價）
+        let solarSummerRate = pSumSemi > 0 ? pSumSemi : pSumPeak;
+        let solarNonSummerRate = pNonSumSemi > 0 ? pNonSumSemi : pNonSumPeak;
+        let weightedSolarRate = ((solarSummerRate * daysSummer) + (solarNonSummerRate * daysNonSummer)) / 365;
+        
+        // 【新導入限制公式】：若有填寫日平均用電量，則自發自用每日上限不得超過該用電量做物理攔截
+        let dailyUsageLimit = getVal('dailyUsage');
+        let finalPvAnnualGenForSavings = pvAnnualGen;
+        if (dailyUsageLimit > 0) {
+            let constrainedDailyGen = Math.min(pvDailyGenCalc, dailyUsageLimit);
+            finalPvAnnualGenForSavings = constrainedDailyGen * pvDays;
+        }
+        
+        let pvAnnualSavings = finalPvAnnualGenForSavings * weightedSolarRate * pvSelfUsagePct * 0.95; 
+        let pvTrecBenefit = pvAnnualGen * trecRate;
+
+        setOutput('pvTotalCost', pvTotalCost);
+        setOutput('pvAnnualGen', pvAnnualGen);
+        setOutput('pvAnnualSavings', pvAnnualSavings);
+
+        let essTotalCap = essCap * essSets;
+        let essReserveKwh = essTotalCap * essReservePct; 
+        let essDailyDischarge = (essTotalCap - essReserveKwh) * essEff;
+        
+        let sumSpread = pSumPeak - pSumOff;
+        let nonSumSpread = pNonSumSemi - pNonSumOff;
+        if(pNonSumPeak > 0) nonSumSpread = pNonSumPeak - pNonSumOff;
+
+        // 【新導入限制公式】：儲能有效套利放電量不得大於負載設定中的「尖峰時段總用電量」
+        let peakTotalUsageLimit = getVal('peakTotalUsage');
+        let effectiveEssDischarge = essDailyDischarge;
+        if (peakTotalUsageLimit > 0) {
+            effectiveEssDischarge = Math.min(essDailyDischarge, peakTotalUsageLimit);
+        }
+
+        let essArbitrage = ((effectiveEssDischarge * sumSpread * arbDaysSummer) + 
+                           (effectiveEssDischarge * nonSumSpread * arbDaysNonSummer)) * 0.95;
+        
+        let essDemandSavings = (essReduceCap * pSumBasic * monthsSummer) + 
+                               (essReduceCap * pNonSumBasic * monthsNonSummer);
+
+        let essTotalCostFinal = (essUnitCost * essSets) + essInstallCost;
+
+        setOutput('essDailyDischarge', essDailyDischarge, 1);
+        setOutput('essSumSpread', sumSpread, 2);
+        setOutput('essNonSumSpread', nonSumSpread, 2);
+        setOutput('essTotalCost', essTotalCostFinal);
+        setOutput('essArbitrageSavings', essArbitrage);
+        setOutput('essDemandSavings', essDemandSavings);
+
+        // 【新導入防錯驗證】：檢查調降後的容量是否低於需量
+        let contractCap = getVal('contractCapacity');
+        let peakDemandVal = getVal('peakDemand');
+        let essReduceCapInput = document.getElementById('essReduceCap');
+        if (contractCap > 0 && peakDemandVal > 0 && (contractCap - essReduceCap) < peakDemandVal) {
+            essReduceCapInput.style.color = 'var(--danger)';
+            essReduceCapInput.title = '警告：調降後契約容量將低於尖峰需量，可能引發超約罰款！';
+        } else {
+            essReduceCapInput.style.color = '';
+            essReduceCapInput.title = '';
+        }
+
+        let totalCost = pvTotalCost + essTotalCostFinal;
+        let totalBenefits = pvAnnualSavings + pvTrecBenefit + essArbitrage + essDemandSavings;
+        let roi = totalCost / totalBenefits;
+
+        setOutput('totalProjectCost', totalCost);
+        setOutput('totalAnnualBenefits', totalBenefits);
+        setOutput('roiYears', roi, 1);
+
+        setOutput('benefitPv', pvAnnualSavings);
+        setOutput('benefitTrec', pvTrecBenefit);
+        setOutput('benefitArbitrage', essArbitrage);
+        setOutput('benefitDemand', essDemandSavings);
+    }
+
+    // --- 浮動計算機腳本 ---
+    let calcStr = "0";
+    function toggleCalc() {
+        const container = document.getElementById('calcContainer');
+        container.classList.toggle('active');
+    }
+    
+    function calcAction(val) {
+        if(val === 'C') {
+            calcStr = "0";
+        } else if(val === '=') {
+            try {
+                let safeStr = calcStr.replace(/×/g, '*').replace(/÷/g, '/');
+                if(/^[0-9+\-*/()..\s]*$/.test(safeStr)) {
+                    let res = new Function('return ' + safeStr)();
+                    calcStr = Number.isInteger(res) ? res.toString() : res.toFixed(4).replace(/\.?0+$/, '');
+                } else { calcStr = "Error"; }
+            } catch(e) {
+                calcStr = "Error";
+            }
+        } else {
+            if(calcStr === "0" || calcStr === "Error") {
+                if(["+", "-", "*", "/", "×", "÷"].includes(val)){
+                    calcStr += val;
+                } else {
+                    calcStr = val;
+                }
+            } else {
+                calcStr += val;
+            }
+        }
+        document.getElementById('calcDisplayStr').value = calcStr;
+    }
 
     // 監聽儲能手動修改時，將快速選單切回「自訂」
     const storageInputIds = ['essCapacity', 'essSets', 'essReservePercent', 'essEfficiency', 'arbDaysSummer', 'arbDaysNonSummer', 'essUnitCost', 'essInstallCost', 'essReduceCap'];
@@ -1146,11 +1443,22 @@
 
     window.onload = () => {
         initTable();
+        // 綁定下拉選單現代事件監聽（代替內聯 HTML 屬性以保證最高可用性）
+        document.getElementById('tariffPlanSelect').addEventListener('change', loadTariffPlan);
+        document.getElementById('essPresetSelect').addEventListener('change', applyEssPreset);
+
         // 預設選擇方案一，快速將數據帶入
         document.getElementById('essPresetSelect').value = 'pack1';
         applyEssPreset();
         loadTariffPlan(); 
         calculateAll();   
+
+        // 監聽所有基本 input，實現即時同步重算
+        document.querySelectorAll('input:not(.calc-display)').forEach(input => {
+            if(!input.classList.contains('t_peak') && !input.classList.contains('t_semi') && !input.classList.contains('t_sat') && !input.classList.contains('t_off') && !input.classList.contains('t_cap') && !input.classList.contains('t_bill')){
+                 input.addEventListener('input', calculateAll);
+            }
+        });
     };
 </script>
 </body>
